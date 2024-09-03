@@ -7,7 +7,7 @@ import categorical_imputations  # Import categorical imputation functions
 
 
 class MICE:
-    def __init__(self, data: pd.DataFrame, column_types: Dict[str, Type], num_imputations: int = 5,
+    def __init__(self, data: pd.DataFrame, column_types: Dict[str, Type] = None, num_imputations: int = 5,
                  num_iterations: int = 10):
         """
         Initialize the MICE class.
@@ -19,46 +19,77 @@ class MICE:
             num_iterations (int): Number of iterations for each imputation.
         """
         self.data = data
-        self.column_types = column_types
         self.num_imputations = num_imputations
         self.num_iterations = num_iterations
-        self.imputed_datasets = []
-        self.imputation_functions = {
-            'numeric': numeric_imputations.impute_numeric,
-            'categorical': categorical_imputations.impute_categorical
-        }
-        self.models = []
-        self.results = []
+        self.imputed_data = []
+        self.inferred_types = {}
 
-    def get_imputation_function(self, column_type: Type) -> Callable[[pd.Series], pd.Series]:
+        # Infer column types if not provided
+        if column_types is None:
+            self.column_types = self._infer_column_types(data)
+        else:
+            self.column_types = column_types
+
+    def _infer_column_types(self, data: pd.DataFrame) -> Dict[str, Type]:
         """
-        Get the imputation function based on the column type.
+        Infer the types of the columns in the data.
 
         Args:
-            column_type (Type): The type of column ('numeric' or 'categorical').
+            data (pd.DataFrame): The dataset with missing values.
 
         Returns:
-            Callable[[pd.Series], pd.Series]: The imputation function for the given column type.
+            Dict[str, Type]: A dictionary with column names as keys and inferred types as values.
         """
-        if column_type not in self.imputation_functions:
-            raise ValueError(f"No imputation function defined for column type '{column_type}'")
-        return self.imputation_functions[column_type]
+        inferred_types = {}
+        for column in data.columns:
+            if pd.api.types.is_numeric_dtype(data[column]):
+                inferred_types[column] = np.number
+            elif pd.api.types.is_categorical_dtype(data[column]) or data[column].dtype == object:
+                inferred_types[column] = 'category'
+            else:
+                inferred_types[column] = 'unknown'
+        self.inferred_types = inferred_types
+        return inferred_types
 
-    def perform_imputation(self):
+    def modify_column_types(self, new_column_types: Dict[str, Type]):
         """
-        Perform multiple imputation by chained equations using custom imputation functions.
+        Modify the types of columns based on user input.
+
+        Args:
+            new_column_types (Dict[str, Type]): Dictionary with column names as keys and new types as values.
         """
-        for _ in range(self.num_imputations):
+        self.column_types.update(new_column_types)
+
+    def impute(self):
+        """
+        Perform multiple imputations using chained equations.
+        """
+        # Iterate over the number of imputations
+        for i in range(self.num_imputations):
             imputed_data = self.data.copy()
 
-            for column, column_type in self.column_types.items():
-                impute_func = self.get_imputation_function(column_type)
+            # Iterate over the specified number of iterations
+            for j in range(self.num_iterations):
+                # Iterate over each column in the dataframe
+                for column in imputed_data.columns:
+                    if self.column_types[column] == np.number:
+                        # Apply numeric imputation
+                        imputed_data[column] = numeric_imputations.impute_numeric(imputed_data, column)
+                    elif self.column_types[column] == 'category':
+                        # Apply categorical imputation
+                        imputed_data[column] = categorical_imputations.impute_categorical(imputed_data, column)
+                    else:
+                        print(f"Skipping column '{column}' due to unknown type.")
 
-                for _ in range(self.num_iterations):
-                    # Apply the imputation function
-                    imputed_data[column] = impute_func(imputed_data[column])
+            # Store the imputed dataset
+            self.imputed_data.append(imputed_data)
 
-            self.imputed_datasets.append(imputed_data)
+        # After imputation, print the inferred types
+        print("Inferred variable types used for imputation:")
+        for column, col_type in self.inferred_types.items():
+            print(f"Column '{column}': Assumed type '{col_type}'")
+
+        return self.imputed_data
 
     def fit_models(self, formula: str):
         """
