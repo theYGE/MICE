@@ -7,8 +7,9 @@ import categorical_imputations  # Import categorical imputation functions
 
 
 class MICE:
-    def __init__(self, data: pd.DataFrame, column_types: Dict[str, Type] = None, num_imputations: int = 5,
-                 num_iterations: int = 10):
+    def __init__(self, data: pd.DataFrame, column_types: Dict[str, Type] = None,
+                 num_imputations: int = 5, num_iterations: int = 10,
+                 predictor_matrix: Optional[pd.DataFrame] = None):
         """
         Initialize the MICE class.
 
@@ -17,6 +18,8 @@ class MICE:
             column_types (Dict[str, Type]): Dictionary with column names as keys and column types as values.
             num_imputations (int): Number of multiple imputations to perform.
             num_iterations (int): Number of iterations for each imputation.
+            predictor_matrix (Optional[pd.DataFrame]): A matrix indicating which variables should be used for
+                                                       imputing each variable. If None, use all available variables.
         """
         self.data = data
         self.num_imputations = num_imputations
@@ -29,6 +32,12 @@ class MICE:
             self.column_types = self._infer_column_types(data)
         else:
             self.column_types = column_types
+
+        # Default predictor matrix to use all available variables if not provided
+        if predictor_matrix is None:
+            self.predictor_matrix = pd.DataFrame(1, index=data.columns, columns=data.columns)
+        else:
+            self.predictor_matrix = predictor_matrix
 
     def _infer_column_types(self, data: pd.DataFrame) -> Dict[str, Type]:
         """
@@ -60,26 +69,46 @@ class MICE:
         """
         self.column_types.update(new_column_types)
 
+    def _get_sorted_columns_by_missing(self) -> List[str]:
+        """
+        Get the list of columns sorted by the number of missing values (ascending).
+
+        Returns:
+            List[str]: List of column names sorted by missing value count.
+        """
+        missing_counts = self.data.isnull().sum()
+        return missing_counts[missing_counts > 0].sort_values().index.tolist()
+
     def impute(self):
         """
         Perform multiple imputations using chained equations.
         """
+        # Get columns sorted by missing values count
+        sorted_columns = self._get_sorted_columns_by_missing()
+
         # Iterate over the number of imputations
         for i in range(self.num_imputations):
             imputed_data = self.data.copy()
 
             # Iterate over the specified number of iterations
             for j in range(self.num_iterations):
-                # Iterate over each column in the dataframe
-                for column in imputed_data.columns:
-                    if self.column_types[column] == np.number:
-                        # Apply numeric imputation
-                        imputed_data[column] = numeric_imputations.impute_numeric(imputed_data, column)
-                    elif self.column_types[column] == 'category':
-                        # Apply categorical imputation
-                        imputed_data[column] = categorical_imputations.impute_categorical(imputed_data, column)
-                    else:
-                        print(f"Skipping column '{column}' due to unknown type.")
+                # Iterate over each column in the sorted order
+                for column in sorted_columns:
+                    predictors = self.predictor_matrix.loc[column]
+                    # Select columns marked as predictors (value == 1) and drop rows with missing values in predictors
+                    predictor_columns = predictors[predictors == 1].index
+                    non_missing_data = imputed_data[predictor_columns].dropna()
+
+                    # Perform imputation only if there is sufficient data
+                    if len(non_missing_data) > 0:
+                        if self.column_types[column] == np.number:
+                            # Apply numeric imputation
+                            imputed_data[column] = numeric_imputations.impute_numeric(imputed_data, column)
+                        elif self.column_types[column] == 'category':
+                            # Apply categorical imputation
+                            imputed_data[column] = categorical_imputations.impute_categorical(imputed_data, column)
+                        else:
+                            print(f"Skipping column '{column}' due to unknown type.")
 
             # Store the imputed dataset
             self.imputed_data.append(imputed_data)
@@ -147,32 +176,49 @@ class MICE:
 
 # Example usage:
 if __name__ == "__main__":
-    # Example DataFrame with missing values
-    df = pd.DataFrame({
-        'age': [25, 30, None, 45, None],  # Numeric column
-        'income': [50000, 60000, None, None, 75000],  # Numeric column
-        'gender': ['M', None, 'F', 'F', None]  # Categorical column
-    })
 
-    # Dictionary of column names and their types ('numeric' or 'categorical')
-    column_types = {
-        'age': 'numeric',
-        'income': 'numeric',
-        'gender': 'categorical'
-    }
+# Example usage:
+data = pd.read_csv('data_with_missing.csv')
+predictor_matrix = pd.DataFrame({
+    'age': [1, 0, 1],
+    'income': [1, 1, 0],
+    'gender': [0, 1, 1]
+}, index=['age', 'income', 'gender'])
+mice = MICE(data, predictor_matrix=predictor_matrix)
+imputed_data = mice.impute()  # Perform the imputation
+pooled_results = mice.pool_results(lambda df: df.mean())  # Pool results using a simple mean function
 
-    # Create MICE object
-    mice = MICE(data=df, column_types=column_types, num_imputations=5, num_iterations=10)
+# If needed, modify column types and re-run
+mice.modify_column_types({'age': 'category'})
+imputed_data = mice.impute()
 
-    # Perform imputation
-    mice.perform_imputation()
 
-    # Fit models
-    formula = 'income ~ age + gender'
-    mice.fit_models(formula)
-
-    # Perform parameter pooling
-    pooled_results = mice.pool_parameters()
-
-    # Print pooled results
-    print(pooled_results)
+    # # Example DataFrame with missing values
+    # df = pd.DataFrame({
+    #     'age': [25, 30, None, 45, None],  # Numeric column
+    #     'income': [50000, 60000, None, None, 75000],  # Numeric column
+    #     'gender': ['M', None, 'F', 'F', None]  # Categorical column
+    # })
+    #
+    # # Dictionary of column names and their types ('numeric' or 'categorical')
+    # column_types = {
+    #     'age': 'numeric',
+    #     'income': 'numeric',
+    #     'gender': 'categorical'
+    # }
+    #
+    # # Create MICE object
+    # mice = MICE(data=df, column_types=column_types, num_imputations=5, num_iterations=10)
+    #
+    # # Perform imputation
+    # mice.perform_imputation()
+    #
+    # # Fit models
+    # formula = 'income ~ age + gender'
+    # mice.fit_models(formula)
+    #
+    # # Perform parameter pooling
+    # pooled_results = mice.pool_parameters()
+    #
+    # # Print pooled results
+    # print(pooled_results)
