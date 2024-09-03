@@ -26,6 +26,7 @@ class MICE:
         self.num_iterations = num_iterations
         self.imputed_data = []
         self.inferred_types = {}
+        self.convergence_stats = {col: {'means': [], 'variances': []} for col in data.columns}
 
         # Infer column types if not provided
         if column_types is None:
@@ -103,12 +104,23 @@ class MICE:
                     if len(non_missing_data) > 0:
                         if self.column_types[column] == np.number:
                             # Apply numeric imputation
-                            imputed_data[column] = numeric_imputations.impute_numeric(imputed_data, column)
+                            imputed_values = numeric_imputations.impute_numeric(imputed_data, column)
                         elif self.column_types[column] == 'category':
                             # Apply categorical imputation
-                            imputed_data[column] = categorical_imputations.impute_categorical(imputed_data, column)
+                            imputed_values = categorical_imputations.impute_categorical(imputed_data, column)
                         else:
                             print(f"Skipping column '{column}' due to unknown type.")
+                            continue
+
+                        # Update the imputed data
+                        imputed_data[column] = imputed_values
+
+                        # Track convergence statistics for numeric columns
+                        if self.column_types[column] == np.number:
+                            mean_imputed = imputed_values.mean()
+                            var_imputed = imputed_values.var()
+                            self.convergence_stats[column]['means'].append(mean_imputed)
+                            self.convergence_stats[column]['variances'].append(var_imputed)
 
             # Store the imputed dataset
             self.imputed_data.append(imputed_data)
@@ -119,6 +131,43 @@ class MICE:
             print(f"Column '{column}': Assumed type '{col_type}'")
 
         return self.imputed_data
+
+    def pool_results(self, analysis_func: callable) -> pd.DataFrame:
+        """
+        Pool results across all imputed datasets using the provided analysis function.
+
+        Args:
+            analysis_func (callable): A function that takes a DataFrame and returns a summary statistic (like mean).
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the pooled results.
+        """
+        results = [analysis_func(df) for df in self.imputed_data]
+        pooled_results = pd.concat(results).groupby(level=0).mean()
+
+        return pooled_results
+
+    def plot_convergence(self):
+        """
+        Plot the convergence of imputations by visualizing the mean and variance of imputed values over iterations.
+        """
+        for column, stats in self.convergence_stats.items():
+            if len(stats['means']) > 0:
+                plt.figure(figsize=(12, 5))
+                plt.subplot(1, 2, 1)
+                plt.plot(stats['means'], marker='o')
+                plt.title(f'Convergence of Mean for {column}')
+                plt.xlabel('Iteration')
+                plt.ylabel('Mean Imputed Value')
+
+                plt.subplot(1, 2, 2)
+                plt.plot(stats['variances'], marker='o')
+                plt.title(f'Convergence of Variance for {column}')
+                plt.xlabel('Iteration')
+                plt.ylabel('Variance of Imputed Value')
+
+                plt.tight_layout()
+                plt.show()
 
     def fit_models(self, formula: str):
         """
