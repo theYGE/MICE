@@ -1,0 +1,5 @@
+install.packages("mice", repos = "https://cran.r-project.org/")
+library(mice)
+data(boys)
+head(boys, 10)
+write.csv(boys, file = "boys.csv")

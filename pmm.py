@@ -63,9 +63,10 @@ def pmm(original_data, target_column, donors=5):
     imputed = observed_values[idx]
 
     # Create a new DataFrame with imputed values
-    original_data[target_column][wy] = imputed  # Replace missing values with imputed values
+    imputed_data = original_data.copy()
+    imputed_data.loc[wy, target_column] = imputed  # Replace missing values with imputed values
 
-    return original_data
+    return imputed_data.copy(), pd.Series(imputed, index=original_data.index[wy]).copy()
 
     # 5. Calculatye predicted values for observed and missing Y:
     #     1. Use b hat for observed Y
@@ -86,8 +87,18 @@ if __name__ == "__main__":
     df = pd.DataFrame(data)
 
     # Impute missing values in column 'C' with 2 donors
-    imputed_df = pmm(df, 'C', donors=4)
+    imputed_df, imputed_values = pmm(df, 'C', donors=4)
 
     # Show imputed DataFrame
     print("DataFrame with imputed values:")
     print(imputed_df)
+
+    boys = pd.read_csv("boys.csv", index_col=0, header=0)
+    imputed_df, imputed_values = pmm(boys[['bmi', 'age']], 'bmi')
+
+    print("DataFrame with imputed values:")
+    print(imputed_df)
+    print(imputed_values)
+    print("END!")
+# import sys
+# sys.modules[__name__] = pmm
