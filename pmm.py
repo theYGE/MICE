@@ -20,35 +20,35 @@ def pmm(original_data, target_column, donors=5):
 
     # Convert DataFrame to NumPy array
     y = original_data[target_column].to_numpy()
-    ry = ~np.isnan(y)  # Boolean array for observed values
+    observed_y = ~np.isnan(y)  # Boolean array for observed values
     x = original_data.drop(columns=[target_column]).to_numpy()  # Predictor variables
 
     # Identify missing values
-    wy = np.isnan(y)  # Boolean array for missing values
+    missing_y = np.isnan(y)  # Boolean array for missing values
 
     # Fit the linear regression model using observed data
-    model = LinearRegression().fit(x[ry], y[ry])
+    model = LinearRegression().fit(x[observed_y], y[observed_y])
 
     # Get the coefficients and intercept from the fitted model
     coef = model.coef_
     intercept = model.intercept_
 
     # Calculate residuals and residual variance
-    residuals = y[ry] - model.predict(x[ry])
+    residuals = y[observed_y] - model.predict(x[observed_y])
     residual_variance = np.var(residuals, ddof=1)
 
     # Calculate the covariance matrix for the coefficients
-    XtX_inv = np.linalg.inv(np.dot(x[ry].T, x[ry]))
+    XtX_inv = np.linalg.inv(np.dot(x[observed_y].T, x[observed_y]))
     coef_cov = residual_variance * XtX_inv
 
     # Draw coefficients from a multivariate normal distribution
     coef_sampled = multivariate_normal.rvs(mean=coef, cov=coef_cov)
 
     # Predict values for observed data using the original fitted coefficients
-    yhatobs = np.dot(x[ry], coef) + intercept
+    yhatobs = np.dot(x[observed_y], coef) + intercept
 
     # Predict values for missing data using the sampled coefficients
-    yhatmis = np.dot(x[wy], coef_sampled) + intercept
+    yhatmis = np.dot(x[missing_y], coef_sampled) + intercept
 
 
 
@@ -59,15 +59,16 @@ def pmm(original_data, target_column, donors=5):
     idx = np.apply_along_axis(lambda row: np.random.choice(np.argsort(row)[:donors]), 1, distances)
 
     # Get the actual observed values based on the calculated indices
-    observed_values = y[ry]
+    observed_values = y[observed_y]
     imputed = observed_values[idx]
 
     # Create a new DataFrame with imputed values
     imputed_data = original_data.copy()
-    imputed_data.loc[wy, target_column] = imputed  # Replace missing values with imputed values
+    imputed_data.loc[missing_y, target_column] = imputed  # Replace missing values with imputed values
 
-    return imputed_data.copy(), pd.Series(imputed, index=original_data.index[wy]).copy()
-
+    # TODO: Returned before and used in printing method
+    # return imputed_data.copy(), pd.Series(imputed, index=original_data.index[missing_y]).copy()
+    return imputed_data.loc[:, target_column]
     # 5. Calculatye predicted values for observed and missing Y:
     #     1. Use b hat for observed Y
     #     2. Use b star for missing Y

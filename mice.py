@@ -2,8 +2,18 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Callable, List, Type, Tuple
 import statsmodels.api as sm
-import numeric_imputations  # Import numeric imputation functions
-import categorical_imputations  # Import categorical imputation functions
+# import numeric_imputations  # Import numeric imputation functions
+# import categorical_imputations  # Import categorical imputation functions
+from pmm import pmm
+from cart import cart_impute
+from typing import Optional
+
+# TODO: Implement first imputation which is simply imputing using existing data
+# TODO: First imputation should just sample from observed valuers -> what does that mean exactly.
+# TODO: Considering now I have all columns imputed in the first iteration, I need to track where the missing values where initially
+# TODO: I need a kind of a mask for missing values to now where to perform the imputation
+# TODO: After that I'd go over all columns and impute them in one iteration and then I just do it over a number of iterations
+# TODO: This way imputing over iteration makes sense becuase in each next iteration I use values from the previous iteration or the column we just imputed
 
 
 class MICE:
@@ -104,7 +114,8 @@ class MICE:
                     if len(non_missing_data) > 0:
                         if self.column_types[column] == np.number:
                             # Apply numeric imputation
-                            imputed_values = numeric_imputations.impute_numeric(imputed_data, column)
+                            imputed_values = pmm(imputed_data, column,donors=5)
+                            # imputed_values = numeric_imputations.impute_numeric(imputed_data, column)
                         elif self.column_types[column] == 'category':
                             # Apply categorical imputation
                             imputed_values = categorical_imputations.impute_categorical(imputed_data, column)
@@ -226,20 +237,26 @@ class MICE:
 # Example usage:
 if __name__ == "__main__":
 
-# Example usage:
-data = pd.read_csv('data_with_missing.csv')
-predictor_matrix = pd.DataFrame({
-    'age': [1, 0, 1],
-    'income': [1, 1, 0],
-    'gender': [0, 1, 1]
-}, index=['age', 'income', 'gender'])
-mice = MICE(data, predictor_matrix=predictor_matrix)
-imputed_data = mice.impute()  # Perform the imputation
-pooled_results = mice.pool_results(lambda df: df.mean())  # Pool results using a simple mean function
+    # Example usage:
+    airquality = pd.read_csv('airquality.csv', index_col=0, header=0)
+    # Columns = Ozone, Solar.R. Wind, Temp, Month, Day
+    airquality.drop(columns=['Ozone'], inplace=True)
 
-# If needed, modify column types and re-run
-mice.modify_column_types({'age': 'category'})
-imputed_data = mice.impute()
+    predictor_matrix = pd.DataFrame({
+        'Solar.R': [0, 1, 1, 1, 1],
+        'Wind': [1, 0, 1, 1, 1],
+        'Temp': [1, 1, 0, 1, 1],
+        'Month': [1, 1, 1, 0, 1],
+        'Day': [1, 1, 1, 1, 0],
+    }, index=['Solar.R', 'Wind', 'Temp', 'Month', 'Day'])
+    mice = MICE(airquality, predictor_matrix=predictor_matrix)
+    imputed_data = mice.impute()  # Perform the imputation
+
+    pooled_results = mice.pool_results(lambda df: df.mean())  # Pool results using a simple mean function
+
+    # If needed, modify column types and re-run
+    mice.modify_column_types({'age': 'category'})
+    imputed_data = mice.impute()
 
 
     # # Example DataFrame with missing values
