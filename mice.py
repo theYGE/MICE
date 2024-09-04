@@ -50,6 +50,9 @@ class MICE:
         else:
             self.predictor_matrix = predictor_matrix
 
+        # Compute the missing mask: True where data is missing, False where data is present
+        self.missing_mask = self.data.isnull()
+
     def _infer_column_types(self, data: pd.DataFrame) -> Dict[str, Type]:
         """
         Infer the types of the columns in the data.
@@ -101,20 +104,36 @@ class MICE:
         for i in range(self.num_imputations):
             imputed_data = self.data.copy()
 
+            # Initial imputation: fill missing values with sampled observed values
+            for column in sorted_columns:
+                if self.missing_mask[column].any():
+                    observed_values = imputed_data[column].dropna()
+                    imputed_data.loc[self.missing_mask[column], column] = np.random.choice(observed_values,
+                                                                                           size=self.missing_mask[
+                                                                                               column].sum(),
+                                                                                           replace=True)
             # Iterate over the specified number of iterations
             for j in range(self.num_iterations):
+                previous_imputed_data = imputed_data.copy()  # Store the previous iteration's data
+
                 # Iterate over each column in the sorted order
                 for column in sorted_columns:
+                    if not self.missing_mask[column].any():
+                        continue  # Skip if there are no missing values in this column
+
                     predictors = self.predictor_matrix.loc[column]
                     # Select columns marked as predictors (value == 1) and drop rows with missing values in predictors
                     predictor_columns = predictors[predictors == 1].index
-                    non_missing_data = imputed_data[predictor_columns].dropna()
+
+                    # Create a copy of the data with only the missing values in the target column
+                    data_for_imputation = previous_imputed_data.copy()
+                    data_for_imputation[column] = self.data[column]  # Restore the original missing values
 
                     # Perform imputation only if there is sufficient data
-                    if len(non_missing_data) > 0:
+                    if len(predictor_columns) > 0:
                         if self.column_types[column] == np.number:
                             # Apply numeric imputation
-                            imputed_values = pmm(imputed_data, column,donors=5)
+                            imputed_values = pmm(data_for_imputation, column,donors=5)
                             # imputed_values = numeric_imputations.impute_numeric(imputed_data, column)
                         elif self.column_types[column] == 'category':
                             # Apply categorical imputation
@@ -123,8 +142,9 @@ class MICE:
                             print(f"Skipping column '{column}' due to unknown type.")
                             continue
 
-                        # Update the imputed data
-                        imputed_data[column] = imputed_values
+                            # Only update the original missing values
+                        imputed_data.loc[self.missing_mask[column], column] = imputed_values[
+                                self.missing_mask[column]]
 
                         # Track convergence statistics for numeric columns
                         if self.column_types[column] == np.number:
