@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 
-def sri(data, target_col):
+def sri(original_data, target_column):
     """
     Perform stochastic regression imputation on the target column of the data.
 
@@ -15,15 +15,14 @@ def sri(data, target_col):
     - data_imputed: numpy array with the missing values in the target column imputed
     """
 
-    # Convert data to a numpy array if it's not already
-    data = np.asarray(data)
-
-    # Identify observed and missing values in the target column
-    y = data[:, target_col]
-    ry = ~np.isnan(y)  # True for observed, False for missing
+    # Convert DataFrame to NumPy array
+    data = original_data.to_numpy()
+    target_col_index = original_data.columns.get_loc(target_column)
+    y = data[:, target_col_index]
+    ry = ~np.isnan(y)  # Boolean array for observed values
 
     # Separate predictors (x) and the target (y)
-    x = np.delete(data, target_col, axis=1)
+    x = np.delete(data, target_col_index, axis=1)
     y_obs = y[ry]  # Observed values of y
     x_obs = x[ry, :]  # Observed predictor values corresponding to y
 
@@ -44,9 +43,12 @@ def sri(data, target_col):
 
     # Fill in the missing values in the original data
     data_imputed = data.copy()
-    data_imputed[~ry, target_col] = y_imputed
+    data_imputed[~ry, target_col_index] = y_imputed
 
-    return data_imputed
+    # Convert the imputed NumPy array back to a DataFrame
+    imputed_df = pd.DataFrame(data_imputed, columns=original_data.columns)
+
+    return imputed_df
 
 
 if __name__ == "__main__":
@@ -61,7 +63,7 @@ if __name__ == "__main__":
     data.loc[np.random.choice(data.index, 20, replace=False), 'y'] = np.nan
 
     # Apply the stochastic regression impute function
-    imputed_data = sri(data.values, target_col=2)
+    imputed_data = sri(data, target_column="y")
 
     # Convert back to a DataFrame (optional)
     imputed_data = pd.DataFrame(imputed_data, columns=data.columns)
