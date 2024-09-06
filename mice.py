@@ -2,11 +2,15 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Callable, List, Type, Tuple
 import statsmodels.api as sm
+from scipy import stats
 # import numeric_imputations  # Import numeric imputation functions
 # import categorical_imputations  # Import categorical imputation functions
 from pmm import pmm
 from cart import cart_impute
 from typing import Optional
+from sklearn.linear_model import LinearRegression
+from sklearn.datasets import fetch_openml
+
 
 # TODO: Implement first imputation which is simply imputing using existing data
 # TODO: First imputation should just sample from observed valuers -> what does that mean exactly.
@@ -52,6 +56,7 @@ class MICE:
 
         # Compute the missing mask: True where data is missing, False where data is present
         self.missing_mask = self.data.isnull()
+        self.results = None
 
     def _infer_column_types(self, data: pd.DataFrame) -> Dict[str, Type]:
         """
@@ -222,24 +227,39 @@ class MICE:
         Returns:
             pd.DataFrame: DataFrame with pooled parameter estimates, standard errors, and other statistics.
         """
-        # Combine parameter estimates
-        params = pd.concat(self.results, axis=1)
-        params.columns = [f'Model_{i}' for i in range(len(self.results))]
+        # Calculate the pooled mean of the parameter estimates
+        mean_params = self.results.mean(axis=0)
 
-        # Calculate means and variances
-        mean_params = params.mean(axis=1)
-        within_var = params.var(axis=1)
-        between_var = params.apply(lambda x: np.var(x, ddof=1), axis=1)
+        # Calculate the within-imputation variance (variance within each model)
+        within_var = self.results.var(axis=0)
 
+        # Calculate the between-imputation variance (variance between models)
+        between_var = self.results.apply(lambda x: np.var(x, ddof=1), axis=0)
+
+        # Total variance: Rubin's rule for combining variances
         total_var = within_var + (1 + 1 / self.num_imputations) * between_var
 
-        # Calculate confidence intervals and p-values
+        # Calculate the standard error for each parameter
+        std_error = np.sqrt(total_var)
+
+        # Calculate 95% confidence intervals
+        ci_lower = mean_params - 1.96 * std_error
+        ci_upper = mean_params + 1.96 * std_error
+
+        # Calculate p-values (two-tailed), handle very small p-values
+        z_scores = np.abs(mean_params / std_error)
+        p_values = 2 * (1 - stats.norm.cdf(z_scores))
+
+        # Format p-values to avoid displaying as zero
+        p_values = np.where(p_values < 1e-10, 1e-10, p_values)
+
+        # Create a DataFrame with pooled estimates, standard errors, confidence intervals, and p-values
         pooled_results = pd.DataFrame({
             'Estimate': mean_params,
-            'Std_Error': np.sqrt(total_var),
-            'CI_Lower': mean_params - 1.96 * np.sqrt(total_var),
-            'CI_Upper': mean_params + 1.96 * np.sqrt(total_var),
-            'P_Value': 2 * (1 - sm.stats.norm.cdf(np.abs(mean_params / np.sqrt(total_var))))
+            'Std_Error': std_error,
+            'CI_Lower': ci_lower,
+            'CI_Upper': ci_upper,
+            'P_Value': p_values
         })
 
         return pooled_results
@@ -257,10 +277,11 @@ class MICE:
 # Example usage:
 if __name__ == "__main__":
 
+    # RUNNIN EXAMPLE WITH AIRQUALITY DATASET
     # Example usage:
     airquality = pd.read_csv('airquality.csv', index_col=0, header=0)
     # Columns = Ozone, Solar.R. Wind, Temp, Month, Day
-    airquality.drop(columns=['Ozone'], inplace=True)
+    airquality_no_Ozone = airquality.drop(columns=['Ozone'])
 
     predictor_matrix = pd.DataFrame({
         'Solar.R': [0, 1, 1, 1, 1],
@@ -269,42 +290,48 @@ if __name__ == "__main__":
         'Month': [1, 1, 1, 0, 1],
         'Day': [1, 1, 1, 1, 0],
     }, index=['Solar.R', 'Wind', 'Temp', 'Month', 'Day'])
-    mice = MICE(airquality, predictor_matrix=predictor_matrix)
+    mice = MICE(airquality_no_Ozone, predictor_matrix=predictor_matrix)
     imputed_data = mice.impute()  # Perform the imputation
 
-    pooled_results = mice.pool_results(lambda df: df.mean())  # Pool results using a simple mean function
+    results = []
+    for i, df in enumerate(imputed_data):
+        df["Ozone"] = airquality["Ozone"]
+
+        # 1. Filter rows where 'Ozone' is not missing
+        df_filtered = df.dropna(subset=['Ozone'])
+        df_filtered["Ozone"] = np.log(df_filtered["Ozone"])
+
+        # 2. Define features (X) and target (y)
+        X = df_filtered[['Solar.R', 'Wind', 'Temp']]  # Predictor variables
+        y = df_filtered['Ozone']  # Target variable
+
+        # 3. Initialize and fit the Linear Regression model
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # 4. Extract the model parameters (coefficients and intercept)
+        coefficients = model.coef_
+        intercept = model.intercept_
+
+        # 5. Store the parameters in a dictionary with feature names
+        result = {'Intercept': intercept,
+                  'Solar.R': coefficients[0],
+                  'Wind': coefficients[1],
+                  'Temp': coefficients[2]
+                  # 'Month': coefficients[3],
+                  # 'Day': coefficients[4]
+                  }
+
+        # Append the result dictionary to the results list
+        results.append(result)
+
+    # 6. Convert the results list to a DataFrame
+    df_results = pd.DataFrame(results)
+
+    mice.results = df_results
+    pooled_results = mice.pool_parameters()
+
 
     # If needed, modify column types and re-run
-    mice.modify_column_types({'age': 'category'})
-    imputed_data = mice.impute()
-
-
-    # # Example DataFrame with missing values
-    # df = pd.DataFrame({
-    #     'age': [25, 30, None, 45, None],  # Numeric column
-    #     'income': [50000, 60000, None, None, 75000],  # Numeric column
-    #     'gender': ['M', None, 'F', 'F', None]  # Categorical column
-    # })
-    #
-    # # Dictionary of column names and their types ('numeric' or 'categorical')
-    # column_types = {
-    #     'age': 'numeric',
-    #     'income': 'numeric',
-    #     'gender': 'categorical'
-    # }
-    #
-    # # Create MICE object
-    # mice = MICE(data=df, column_types=column_types, num_imputations=5, num_iterations=10)
-    #
-    # # Perform imputation
-    # mice.perform_imputation()
-    #
-    # # Fit models
-    # formula = 'income ~ age + gender'
-    # mice.fit_models(formula)
-    #
-    # # Perform parameter pooling
-    # pooled_results = mice.pool_parameters()
-    #
-    # # Print pooled results
-    # print(pooled_results)
+    # mice.modify_column_types({'age': 'category'})
+    # imputed_data = mice.impute()
