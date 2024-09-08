@@ -6,9 +6,11 @@ from scipy import stats
 # import numeric_imputations  # Import numeric imputation functions
 # import categorical_imputations  # Import categorical imputation functions
 from pmm import pmm
+from multinominal_logistic_regression import multinomial_logistic_impute
 from cart import cart_impute
 from typing import Optional
 from sklearn.linear_model import LinearRegression
+from sklearn.datasets import fetch_openml
 from sklearn.datasets import fetch_openml
 
 
@@ -47,6 +49,9 @@ class MICE:
             self.column_types = self._infer_column_types(data)
         else:
             self.column_types = column_types
+        print("Inferred variable types used for imputation:")
+        for column, col_type in self.inferred_types.items():
+            print(f"Column '{column}': Assumed type '{col_type}'")
 
         # Default predictor matrix to use all available variables if not provided
         if predictor_matrix is None:
@@ -142,7 +147,8 @@ class MICE:
                             # imputed_values = numeric_imputations.impute_numeric(imputed_data, column)
                         elif self.column_types[column] == 'category':
                             # Apply categorical imputation
-                            imputed_values = categorical_imputations.impute_categorical(imputed_data, column)
+                            # TODO: Apply categorical imputation using multinomial logistic regression
+                            imputed_values = multinomial_logistic_impute(data_for_imputation, column)
                         else:
                             print(f"Skipping column '{column}' due to unknown type.")
                             continue
@@ -276,6 +282,31 @@ class MICE:
 
 # Example usage:
 if __name__ == "__main__":
+
+    nhanes = pd.read_csv('nhanes.csv', index_col=0, header=0)
+    nhanes_no_chl = nhanes.drop(columns=['chl'])
+    # Example usage:
+    # https: // stefvanbuuren.name / RECAPworkshop / Practicals / RECAP_Practical_II.html
+    # Columns:
+    # age - 1 2 or 3
+    # bmi - bmi
+    # hyp - 1 or 2
+    # chl - total serum cholesterol
+    # model chl from bmi + age + hyp
+
+    predictor_matrix = pd.DataFrame({
+        'age': [0, 1, 1 ],
+        'bmi': [1, 0, 1 ],
+        'hyp': [1, 1, 0 ]
+    }, index=['age', 'bmi', 'hyp'])
+    mice = MICE(nhanes_no_chl, predictor_matrix=predictor_matrix)
+    mice.modify_column_types({'age': 'category'})
+    mice.modify_column_types({'hyp': 'category'})
+    imputed_data = mice.impute()  # Perform the imputation
+
+
+
+
 
     # RUNNIN EXAMPLE WITH AIRQUALITY DATASET
     # Example usage:
