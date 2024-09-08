@@ -148,7 +148,8 @@ class MICE:
                         elif self.column_types[column] == 'category':
                             # Apply categorical imputation
                             # TODO: Apply categorical imputation using multinomial logistic regression
-                            imputed_values = multinomial_logistic_impute(data_for_imputation, column)
+                            column_number = data_for_imputation.columns.get_loc(column)
+                            imputed_values = multinomial_logistic_impute(data_for_imputation, column_number)
                         else:
                             print(f"Skipping column '{column}' due to unknown type.")
                             continue
@@ -302,7 +303,46 @@ if __name__ == "__main__":
     mice = MICE(nhanes_no_chl, predictor_matrix=predictor_matrix)
     mice.modify_column_types({'age': 'category'})
     mice.modify_column_types({'hyp': 'category'})
-    imputed_data = mice.impute()  # Perform the imputation
+    imputed_data = mice.impute()
+
+    results = []
+    for i, df in enumerate(imputed_data):
+        df["chl"] = nhanes["chl"]
+
+        # 1. Filter rows where 'Ozone' is not missing
+        df_filtered = df.dropna(subset=['chl'])
+        # df_filtered["Ozone"] = np.log(df_filtered["Ozone"])
+
+        # 2. Define features (X) and target (y)
+        X = df_filtered[['age', 'bmi']]  # Predictor variables
+        y = df_filtered['chl']  # Target variable
+
+        # 3. Initialize and fit the Linear Regression model
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # 4. Extract the model parameters (coefficients and intercept)
+        coefficients = model.coef_
+        intercept = model.intercept_
+
+        # 5. Store the parameters in a dictionary with feature names
+        result = {'Intercept': intercept,
+                  'age': coefficients[0],
+                  'bmi': coefficients[1],
+                  # 'hyp': coefficients[2]
+                  # 'Month': coefficients[3],
+                  # 'Day': coefficients[4]
+                  }
+
+        # Append the result dictionary to the results list
+        results.append(result)
+
+    # 6. Convert the results list to a DataFrame
+    df_results = pd.DataFrame(results)
+
+    mice.results = df_results
+    pooled_results = mice.pool_parameters()
+    # Perform the imputation
 
 
 

@@ -50,7 +50,7 @@ def multinomial_logistic_impute(data, target_col):
     # Fill in the missing values in the original data
     data.loc[~observed_indices, data.columns[target_col]] = y_imputed
 
-    return data.loc[:, target_col]
+    return data.iloc[:, target_col]
 
     # Returned before
     # return data
