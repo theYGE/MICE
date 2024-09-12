@@ -88,18 +88,9 @@ if __name__ == "__main__":
     df = pd.DataFrame(data)
 
     # Impute missing values in column 'C' with 2 donors
-    imputed_df, imputed_values = pmm(df, 'C', donors=4)
+    imputed_values = pmm(df, 'C', donors=4)
 
     # Show imputed DataFrame
     print("DataFrame with imputed values:")
     print(imputed_df)
 
-    boys = pd.read_csv("boys.csv", index_col=0, header=0)
-    imputed_df, imputed_values = pmm(boys[['bmi', 'age']], 'bmi')
-
-    print("DataFrame with imputed values:")
-    print(imputed_df)
-    print(imputed_values)
-    print("END!")
-# import sys
-# sys.modules[__name__] = pmm
