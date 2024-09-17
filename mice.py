@@ -280,9 +280,91 @@ class MICE:
         """
         return self.imputed_datasets
 
+# Define the function for introducing 10% missingness
+def introduce_missingness(df, missing_percentage):
+    df_missing = df.copy()
+    # Randomly set values to NaN for 10% of the data in each column
+    for col in df_missing.columns:
+        missing_indices = np.random.choice(df_missing.index, size=int(missing_percentage * len(df_missing)), replace=False)
+        df_missing.loc[missing_indices, col] = np.nan
+    return df_missing
+
 
 # Example usage:
 if __name__ == "__main__":
+
+    # SIMULATION STUDY
+    # Load the airquality dataset
+    airquality = pd.read_csv('airquality.csv', index_col=0, header=0)
+    # Columns: Ozone, Solar.R, Wind, Temp, Month, Day
+
+    # Define the predictor matrix for MICE imputation
+    predictor_matrix = pd.DataFrame({
+        'Solar.R': [0, 1, 1, 0, 0],
+        'Wind': [1, 0, 1, 0, 0],
+        'Temp': [1, 1, 0, 0, 0],
+        'Month': [1, 1, 1, 0, 1],
+        'Day': [1, 1, 1, 1, 0],
+    }, index=['Solar.R', 'Wind', 'Temp', 'Month', 'Day'])
+
+    # Step 1: Draw 500 samples with replacement
+    sample = airquality.sample(n=500, replace=True)
+
+    # Step 2: Introduce 10% missing values
+    missing_percentage = 0.10
+    sample_with_missing = introduce_missingness(sample, missing_percentage)
+
+    # Step 3: Apply MICE imputation
+    airquality_no_Ozone = sample_with_missing.drop(columns=['Ozone'])
+    mice = MICE(airquality_no_Ozone, predictor_matrix=predictor_matrix, num_imputations=20, num_iterations=30)
+    imputed_data = mice.impute()
+
+    # Step 4: Estimate linear regression coefficients on imputed datasets
+    results = []
+    for df in imputed_data:
+        # Add back the original 'Ozone' column and filter rows where 'Ozone' is not missing
+        df["Ozone"] = sample_with_missing["Ozone"]
+        df_filtered = df.dropna(subset=['Ozone'])
+
+        # Log transformation (ensure no negative values)
+        df_filtered = df_filtered[df_filtered['Ozone'] > 0]
+        df_filtered["Ozone"] = np.log(df_filtered["Ozone"])
+
+        # Define features (X) and target (y)
+        X = df_filtered[['Solar.R', 'Wind', 'Temp']]  # Predictor variables
+        y = df_filtered['Ozone']  # Target variable
+
+        # Initialize and fit the Linear Regression model
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Extract the model parameters (coefficients and intercept)
+        coefficients = model.coef_
+        intercept = model.intercept_
+
+        # Store the results in a dictionary
+        result = {
+            'Intercept': intercept,
+            'Solar.R': coefficients[0],
+            'Wind': coefficients[1],
+            'Temp': coefficients[2]
+        }
+
+        # Append results to the list
+        results.append(result)
+
+    # Step 5: Pool results and calculate averages
+    df_results = pd.DataFrame(results)
+    mice.results = df_results
+    pooled_results = mice.pool_parameters()  # Use your pooling function
+
+    # Output pooled results
+    print(pooled_results)
+
+
+
+
+
 
     nhanes = pd.read_csv('nhanes.csv', index_col=0, header=0)
     nhanes_no_chl = nhanes.drop(columns=['chl'])
@@ -355,9 +437,9 @@ if __name__ == "__main__":
     airquality_no_Ozone = airquality.drop(columns=['Ozone'])
 
     predictor_matrix = pd.DataFrame({
-        'Solar.R': [0, 1, 1, 1, 1],
-        'Wind': [1, 0, 1, 1, 1],
-        'Temp': [1, 1, 0, 1, 1],
+        'Solar.R': [0, 1, 1, 0, 0],
+        'Wind': [1, 0, 1, 0, 0],
+        'Temp': [1, 1, 0, 0, 0],
         'Month': [1, 1, 1, 0, 1],
         'Day': [1, 1, 1, 1, 0],
     }, index=['Solar.R', 'Wind', 'Temp', 'Month', 'Day'])
@@ -401,6 +483,8 @@ if __name__ == "__main__":
 
     mice.results = df_results
     pooled_results = mice.pool_parameters()
+
+    print("Finished pooling results.")
 
 
     # If needed, modify column types and re-run
