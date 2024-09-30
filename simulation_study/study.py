@@ -93,7 +93,7 @@ def calculate_ci(y_true, y_pred, confidence=0.95):
 
 
 # Function to perform the simulation with MICE imputation
-def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechanism='MCAR', missing_rate=0.2):
+def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechanism='MCAR'):
     complete_case_mean_value = data["age"].mean()  # Mean calculation
     complete_case_variance_value = data["age"].var()
     complete_case_column = data["age"]
@@ -106,9 +106,9 @@ def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechan
     for i in range(n_sim):
         sample_data = resample(data, n_samples=sample_size, replace=True)
         if mechanism == "MAR": # Draw a bootstrap sample
-            missing_data = simulate_mar_with_target(data, target_col="age", condition_col="height", missing_rate=missing_rate)
+            missing_data = simulate_mar_with_target(sample_data, target_col="age", condition_col="height", missing_rate=missing_rate)
         if mechanism == "MCAR":
-            missing_data = simulate_mcar(data, target_col="age", missing_rate=missing_rate)
+            missing_data = simulate_mcar(sample_data, target_col="age", missing_rate=missing_rate)
 
         # Imputation using MICE (fancyimpute)\
         #TODO: Use MICE for Imputation
@@ -150,6 +150,8 @@ if __name__ == "__main__":
     print(dataset.columns)
     print(dataset.isna().sum())
     dataset.dropna(inplace=True)
+
+    result = run_simulation(data=dataset)
 
     mar_20 = simulate_mar_with_target(data=dataset, target_col="age", condition_col="height", missing_rate=0.2)
     mar_50 = simulate_mar_with_target(data=dataset, target_col="age", condition_col="height", missing_rate=0.5)

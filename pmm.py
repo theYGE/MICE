@@ -18,8 +18,15 @@ def pmm(original_data, target_column, donors=5):
         pd.DataFrame: A DataFrame with imputed values for the specified target column.
     """
 
+    # Automatically identify categorical columns
+    categorical_cols = original_data.select_dtypes(include=['object', 'category']).columns.tolist()
+
+    # Create dummy variables for categorical columns
+    original_data_dummies = pd.get_dummies(original_data, columns=categorical_cols, drop_first=True)
+
     # Convert DataFrame to NumPy array
-    y = original_data[target_column].to_numpy()
+    y = original_data_dummies[target_column].to_numpy()
+
     observed_y = ~np.isnan(y)  # Boolean array for observed values
     x = original_data.drop(columns=[target_column]).to_numpy()  # Predictor variables
 
