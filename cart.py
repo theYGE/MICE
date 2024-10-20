@@ -2,21 +2,26 @@ import pandas as pd
 import numpy as np
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
 
-def preprocess_features(X):
+
+def preprocess_features(X, encoder=None):
     """Preprocess features: handle categorical variables with one-hot encoding."""
-    categorical_cols = X.select_dtypes(include=['object']).columns
-    numerical_cols = X.select_dtypes(exclude=['object']).columns
+    categorical_cols = X.select_dtypes(include=['object', "category"]).columns
+    numerical_cols = X.select_dtypes(exclude=['object', "category"]).columns
 
-    # One-hot encoding for categorical variables
+    # Use provided encoder or fit a new one
     if len(categorical_cols) > 0:
-        encoder = OneHotEncoder(drop='first', sparse=False)
-        X_encoded = pd.DataFrame(encoder.fit_transform(X[categorical_cols]))
+        if encoder is None:
+            encoder = OneHotEncoder(drop='first', sparse=False)
+            X_encoded = pd.DataFrame(encoder.fit_transform(X[categorical_cols]))
+        else:
+            X_encoded = pd.DataFrame(encoder.transform(X[categorical_cols]))
         X_encoded.columns = encoder.get_feature_names_out(categorical_cols)
         X = pd.concat([X[numerical_cols].reset_index(drop=True), X_encoded.reset_index(drop=True)], axis=1)
 
-    return X
+    return X, encoder
 
 
 def fit_cart_model(X_train, y_train):
@@ -43,14 +48,14 @@ def cart_impute(data, target_col):
     y_train = train_data[target_col]
 
     # Preprocess features (handle categorical variables)
-    X_train = preprocess_features(X_train)
+    X_train, encoder = preprocess_features(X_train)
 
     # Fit the CART model
     cart_model = fit_cart_model(X_train, y_train)
 
     # Prepare data for missing rows
     X_missing = data.loc[missing_rows].drop(columns=[target_col])
-    X_missing = preprocess_features(X_missing)
+    X_missing, _ = preprocess_features(X_missing, encoder)
 
     # Predict the missing values using the fitted CART model
     predicted_values = cart_model.predict(X_missing)
@@ -58,7 +63,7 @@ def cart_impute(data, target_col):
     # Impute the missing values in the original DataFrame
     data.loc[missing_rows, target_col] = predicted_values
 
-    return data
+    return data.loc[:, target_col]
 
 
 if __name__ == "__main__":

@@ -22,9 +22,14 @@ def multinomial_logistic_impute(data, target_col):
     y = data.iloc[:, target_col]  # Target variable (categorical)
     X = data.drop(columns=[data.columns[target_col]])  # Features
 
+    categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+
+    # Create dummy variables for categorical columns
+    original_data_dummies = pd.get_dummies(X, columns=categorical_cols, drop_first=True)
+
     # One-hot encode categorical features in X
-    encoder = OneHotEncoder(sparse=False)
-    X_encoded = encoder.fit_transform(X)
+    # encoder = OneHotEncoder(sparse=False)
+    X_encoded = original_data_dummies
 
     # Identify observed and missing values in the target column
     observed_indices = ~pd.isna(y)

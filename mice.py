@@ -12,6 +12,9 @@ from typing import Optional
 from sklearn.linear_model import LinearRegression
 from sklearn.datasets import fetch_openml
 from sklearn.datasets import fetch_openml
+from cart import cart_impute
+from stochastic_regression_imputation import sri
+from logistic_regression import bayesian_logreg_impute
 
 
 # TODO: Implement first imputation which is simply imputing using existing data
@@ -49,9 +52,9 @@ class MICE:
             self.column_types = self._infer_column_types(data)
         else:
             self.column_types = column_types
-        print("Inferred variable types used for imputation:")
-        for column, col_type in self.inferred_types.items():
-            print(f"Column '{column}': Assumed type '{col_type}'")
+        # print("Inferred variable types used for imputation:")
+        # for column, col_type in self.inferred_types.items():
+        #     print(f"Column '{column}': Assumed type '{col_type}'")
 
         # Default predictor matrix to use all available variables if not provided
         if predictor_matrix is None:
@@ -118,6 +121,8 @@ class MICE:
             for column in sorted_columns:
                 if self.missing_mask[column].any():
                     observed_values = imputed_data[column].dropna()
+                    # mean_value = observed_values.mean()
+                    # imputed_data.loc[self.missing_mask[column], column] = mean_value
                     imputed_data.loc[self.missing_mask[column], column] = np.random.choice(observed_values,
                                                                                            size=self.missing_mask[
                                                                                                column].sum(),
@@ -135,21 +140,24 @@ class MICE:
                     # Select columns marked as predictors (value == 1) and drop rows with missing values in predictors
                     predictor_columns = predictors[predictors == 1].index
 
-                    # Create a copy of the data with only the missing values in the target column
-                    data_for_imputation = previous_imputed_data.copy()
-                    data_for_imputation[column] = self.data[column]  # Restore the original missing values
+                    # Restore the original missing values
 
                     # Perform imputation only if there is sufficient data
                     if len(predictor_columns) > 0:
+                        # Create a copy of the data with only the missing values in the target column
+                        data_for_imputation = previous_imputed_data.copy()
+                        data_for_imputation[column] = self.data[column]
+
                         if self.column_types[column] == np.number:
                             # Apply numeric imputation
-                            imputed_values = pmm(data_for_imputation, column,donors=5)
+                            imputed_values = pmm(data_for_imputation, column)
                             # imputed_values = numeric_imputations.impute_numeric(imputed_data, column)
                         elif self.column_types[column] == 'category':
                             # Apply categorical imputation
                             # TODO: Apply categorical imputation using multinomial logistic regression
-                            column_number = data_for_imputation.columns.get_loc(column)
-                            imputed_values = multinomial_logistic_impute(data_for_imputation, column_number)
+                            # column_number = data_for_imputation.columns.get_loc(column)
+                            # imputed_values = multinomial_logistic_impute(data_for_imputation, column_number)
+                            imputed_values = bayesian_logreg_impute(data_for_imputation, column)
                         else:
                             print(f"Skipping column '{column}' due to unknown type.")
                             continue
@@ -169,9 +177,9 @@ class MICE:
             self.imputed_data.append(imputed_data)
 
         # After imputation, print the inferred types
-        print("Inferred variable types used for imputation:")
-        for column, col_type in self.inferred_types.items():
-            print(f"Column '{column}': Assumed type '{col_type}'")
+        # print("Inferred variable types used for imputation:")
+        # for column, col_type in self.inferred_types.items():
+        #     print(f"Column '{column}': Assumed type '{col_type}'")
 
         return self.imputed_data
 
@@ -238,31 +246,37 @@ class MICE:
         mean_params = self.results.mean(axis=0)
 
         # Calculate the within-imputation variance (variance within each model)
-        within_var = self.results.var(axis=0)
+        within_var = self.results.var(axis=0, ddof=1)
 
         # Calculate the between-imputation variance (variance between models)
         between_var = self.results.apply(lambda x: np.var(x, ddof=1), axis=0)
 
         # Total variance: Rubin's rule for combining variances
-        total_var = within_var + (1 + 1 / self.num_imputations) * between_var
+        total_var = within_var * 1.5 + (1 + 1 / self.num_imputations) * between_var
 
         # Calculate the standard error for each parameter
         std_error = np.sqrt(total_var)
 
-        # Calculate 95% confidence intervals
-        ci_lower = mean_params - 1.96 * std_error
-        ci_upper = mean_params + 1.96 * std_error
+        z_critical = 1.96  # For a 95% CI
+
+        # Calculate 95% confidence intervals using the z-critical value
+        ci_lower = mean_params - z_critical * std_error
+        ci_upper = mean_params + z_critical * std_error
 
         # Calculate p-values (two-tailed), handle very small p-values
+        # Calculate the z-scores by dividing the estimated mean parameters by the standard error
         z_scores = np.abs(mean_params / std_error)
+
+        # Use the z-scores to compute the p-values (two-tailed test)
         p_values = 2 * (1 - stats.norm.cdf(z_scores))
 
-        # Format p-values to avoid displaying as zero
+        # Format p-values to avoid displaying as zero for very small values
         p_values = np.where(p_values < 1e-10, 1e-10, p_values)
 
         # Create a DataFrame with pooled estimates, standard errors, confidence intervals, and p-values
         pooled_results = pd.DataFrame({
             'Estimate': mean_params,
+            'Variance': total_var,
             'Std_Error': std_error,
             'CI_Lower': ci_lower,
             'CI_Upper': ci_upper,

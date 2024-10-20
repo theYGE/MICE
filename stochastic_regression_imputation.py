@@ -15,9 +15,19 @@ def sri(original_data, target_column):
     - data_imputed: numpy array with the missing values in the target column imputed
     """
 
+    # Automatically identify categorical columns
+    categorical_cols = original_data.select_dtypes(include=['object', 'category']).columns.tolist()
+
+    # Create dummy variables for categorical columns
+    original_data_dummies = pd.get_dummies(original_data, columns=categorical_cols, drop_first=True)
+    #
+    # # Convert DataFrame to NumPy array
+    # y = original_data_dummies[target_column].to_numpy()
+
+
     # Convert DataFrame to NumPy array
-    data = original_data.to_numpy()
-    target_col_index = original_data.columns.get_loc(target_column)
+    data = original_data_dummies.to_numpy()
+    target_col_index = original_data_dummies.columns.get_loc(target_column)
     y = data[:, target_col_index]
     ry = ~np.isnan(y)  # Boolean array for observed values
 
@@ -46,9 +56,9 @@ def sri(original_data, target_column):
     data_imputed[~ry, target_col_index] = y_imputed
 
     # Convert the imputed NumPy array back to a DataFrame
-    imputed_df = pd.DataFrame(data_imputed, columns=original_data.columns)
+    # imputed_df = pd.DataFrame(data_imputed, columns=original_data.columns)
 
-    return imputed_df
+    return data_imputed[:, target_col_index]
 
 
 if __name__ == "__main__":

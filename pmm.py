@@ -3,7 +3,9 @@ import pandas as pd
 from scipy.spatial.distance import cdist
 from sklearn.linear_model import LinearRegression
 from scipy.stats import multivariate_normal
+import warnings
 
+import scipy
 
 def pmm(original_data, target_column, donors=5):
     """
@@ -28,7 +30,7 @@ def pmm(original_data, target_column, donors=5):
     y = original_data_dummies[target_column].to_numpy()
 
     observed_y = ~np.isnan(y)  # Boolean array for observed values
-    x = original_data.drop(columns=[target_column]).to_numpy()  # Predictor variables
+    x = original_data_dummies.drop(columns=[target_column]).to_numpy()  # Predictor variables
 
     # Identify missing values
     missing_y = np.isnan(y)  # Boolean array for missing values
@@ -48,8 +50,15 @@ def pmm(original_data, target_column, donors=5):
     XtX_inv = np.linalg.inv(np.dot(x[observed_y].T, x[observed_y]))
     coef_cov = residual_variance * XtX_inv
 
+    # epsilon = 1e-1
+    # Add epsilon to the diagonal of the covariance matrix
+    # coef_cov += np.eye(coef_cov.shape[0]) * epsilon
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        coef_sampled = multivariate_normal.rvs(mean=coef, cov=coef_cov)
+
     # Draw coefficients from a multivariate normal distribution
-    coef_sampled = multivariate_normal.rvs(mean=coef, cov=coef_cov)
+    # coef_sampled = multivariate_normal.rvs(mean=coef, cov=coef_cov)
 
     # Predict values for observed data using the original fitted coefficients
     yhatobs = np.dot(x[observed_y], coef) + intercept
