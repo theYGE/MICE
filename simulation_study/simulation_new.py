@@ -46,7 +46,7 @@ def generate_mar_data(data, target_col, condition_cols, weights=None, intercept=
 
     # Set default weights if none are provided
     if weights is None:
-        weights = np.array([0.7, 0.05] )
+        weights = np.array([0.2, 0.9] )
 
     # Calculate the probabilities of missingness using the logistic function
     logits = intercept + np.dot(X, weights)
@@ -130,7 +130,7 @@ def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechan
         #     'sex': [1, 1, 0, 1],
         #     'race': [1, 1, 1, 0],
         # }, index=['height', 'age', 'sex', 'race'])
-        # missing_data.dropna(inplace=True)
+        missing_data.dropna(inplace=True)
         mice = MICE(missing_data, num_imputations=1, num_iterations=0)
         imputed_data = mice.impute()
 
@@ -138,7 +138,6 @@ def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechan
         results = []
         for df in imputed_data:
             # Add back the original 'Ozone' column and filter rows where 'Ozone' is not missing
-            # df["weight"] = missing_data["weight"]
 
             # Define features (X) and target (y)
             features = ['height', 'age', 'sex', 'race']
@@ -236,53 +235,173 @@ if __name__ == "__main__":
     columns_to_keep = ['height', 'age', 'weight', 'sex', 'race']
     dataset = dataset.filter(columns_to_keep)
     dataset.dropna(inplace=True)
-
-    age_mean = 0
-    age_parameter = 0
-
-
-    for i in range(500):
-        sample_data = resample(dataset, n_samples=1000, replace=True)
-        missing_data = generate_mar_data(sample_data, target_col="age", condition_cols=['height', 'weight'],
-                                         missing_rate=0.5)
-        missing_data.dropna(inplace=True)
-        features = ['height', 'age', 'sex', 'race']
-
-        X = pd.get_dummies(missing_data[features], drop_first=True)
-        y = missing_data['weight']  # Target variable
-
-        # Initialize and fit the Linear Regression model
-        model = LinearRegression()
-        model.fit(X, y)
-
-        # Extract the model parameters (coefficients and intercept)
-        coefficients = model.coef_
-
-        # Store the results in a dictionary
-        age_parameter += coefficients[1]
-    age_parameter /= 500
-    print(age_parameter)
-
-
     #
-    # for i in range(100):
-    #     print("Running simulation", i)
+    # # Define the true values for comparison
+    # true_mean_age = 47.57
+    # true_age_parameter = 0.1215
+    #
+    # # Initialize lists to store the estimates and metrics
+    # mean_ages = []
+    # age_parameters = []
+    # mean_se_age = []
+    # se_age_parameters = []
+    #
+    # # Number of simulations
+    # num_simulations = 500
+    #
+    # for i in range(num_simulations):
+    #     print(f"Running simulation {i + 1}")
+    #     # Resample your dataset
     #     sample_data = resample(dataset, n_samples=1000, replace=True)
-    #     missing_data = generate_mar_data(sample_data, target_col="age",condition_cols=['height', 'weight'], missing_rate=0.5)
-    #     for _ in range(20):
-    #         sample_data['age'] = sri(missing_data, 'age')
+    #
+    #     # Generate missing data (assuming your function is defined)
+    #     missing_data = generate_mar_data(sample_data, target_col="age", condition_cols=['height', 'weight'],
+    #                                      missing_rate=0.2)
+    #     # missing_data = simulate_mcar(sample_data, target_col="age", missing_rate=0.5)
+    #     missing_data.dropna(inplace=True)
     #
     #     # Define features (X) and target (y)
     #     features = ['height', 'age', 'sex', 'race']
-    #
-    #     X = pd.get_dummies(sample_data[features], drop_first=True)
-    #     y = sample_data['weight']  # Target variable
+    #     X = pd.get_dummies(missing_data[features], drop_first=True)
+    #     y = missing_data['weight']  # Target variable
     #
     #     # Initialize and fit the Linear Regression model
     #     model = LinearRegression()
     #     model.fit(X, y)
-    #     age_parameter += model.coef_[1]
-    # age_mean = age_parameter / 100
+    #
+    #     # Store the regression coefficients and the mean of age
+    #     age_mean = np.mean(X['age'])
+    #     age_coef = model.coef_[1]  # Assuming age is the second feature after dummy encoding
+    #
+    #     # Append the estimates to the lists
+    #     mean_ages.append(age_mean)
+    #     age_parameters.append(age_coef)
+    #
+    #     # Calculate standard errors for the current simulation
+    #     # Standard error of the mean
+    #     se_age = np.std(X['age'], ddof=1) / np.sqrt(len(X))
+    #     mean_se_age.append(se_age)
+    #
+    #     # Standard error of the regression coefficient (assuming homoscedasticity)
+    #     # Calculate residuals
+    #     residuals = y - model.predict(X)
+    #     residual_variance = np.var(residuals, ddof=1)
+    #     se_age_parameter = np.sqrt(residual_variance / np.sum((X['age'] - np.mean(X['age'])) ** 2))
+    #     se_age_parameters.append(se_age_parameter)
+    #
+    # # Convert results to DataFrame for easier handling
+    # results_df = pd.DataFrame({
+    #     'Mean_Age': mean_ages,
+    #     'Age_Coefficient': age_parameters,
+    #     'SE_Mean_Age': mean_se_age,
+    #     'SE_Age_Coefficient': se_age_parameters
+    # })
+    #
+    # # Calculate coverage and confidence intervals
+    # z_critical = 1.96  # For a 95% CI
+    # results_df['CI_Lower_Mean_Age'] = results_df['Mean_Age'] - z_critical * results_df['SE_Mean_Age']
+    # results_df['CI_Upper_Mean_Age'] = results_df['Mean_Age'] + z_critical * results_df['SE_Mean_Age']
+    #
+    # results_df['CI_Lower_Age_Coefficient'] = results_df['Age_Coefficient'] - z_critical * results_df[
+    #     'SE_Age_Coefficient']
+    # results_df['CI_Upper_Age_Coefficient'] = results_df['Age_Coefficient'] + z_critical * results_df[
+    #     'SE_Age_Coefficient']
+    #
+    # # Calculate coverage
+    # mean_age_coverage = np.mean(
+    #     (results_df['CI_Lower_Mean_Age'] <= true_mean_age) & (results_df['CI_Upper_Mean_Age'] >= true_mean_age))
+    # age_coef_coverage = np.mean((results_df['CI_Lower_Age_Coefficient'] <= true_age_parameter) & (
+    #             results_df['CI_Upper_Age_Coefficient'] >= true_age_parameter))
+    #
+    # avg_ci_length_mean = np.mean(results_df["CI_Upper_Mean_Age"] - results_df["CI_Lower_Mean_Age"])
+    # avg_ci_length_coef = np.mean(results_df["CI_Upper_Age_Coefficient"] - results_df["CI_Lower_Age_Coefficient"])
+    #
+    # print(f"Mean Age Coverage: {mean_age_coverage * 100:.2f}%")
+    # print(f"Age Coefficient Coverage: {age_coef_coverage * 100:.2f}%")
+
+
+
+
+    # # True values for the analysis
+    # true_mean_age = 47.57
+    # true_age_coefficient = 0.1215
+    #
+    # # Initialize variables to store results
+    # age_means = []
+    # age_parameters = []
+    #
+    # for i in range(500):
+    #     print("Running simulation", i)
+    #     sample_data = resample(dataset, n_samples=1000, replace=True)
+    #     missing_data = generate_mar_data(sample_data, target_col="age", condition_cols=['height', 'weight'],
+    #                                      missing_rate=0.5)
+    #     # missing_data = simulate_mcar(sample_data, target_col="age", missing_rate=0.5)
+    #     missing_data.dropna(inplace=True)
+    #
+    #     # Define features (X) and target (y)
+    #     features = ['height', 'age', 'sex', 'race']
+    #     X = pd.get_dummies(missing_data[features], drop_first=True)
+    #     y = missing_data['weight']  # Target variable
+    #
+    #     # Initialize and fit the Linear Regression model
+    #     model = LinearRegression()
+    #     model.fit(X, y)
+    #
+    #     # Collect the mean of 'age' and the regression coefficient for 'age'
+    #     age_means.append(np.mean(X['age']))
+    #     age_parameters.append(model.coef_[1])
+    #
+    # # Convert collected results to arrays for easier computation
+    # age_means = np.array(age_means)
+    # age_parameters = np.array(age_parameters)
+    #
+    # # Calculate metrics for 'age' mean
+    # age_mean = np.mean(age_means)
+    # age_variance = np.var(age_means, ddof=1)
+    # age_std_error = np.sqrt(age_variance / len(age_means))
+    # z_critical = 2.576  # For a 95% CI
+    # age_ci_lower = age_mean - z_critical * age_std_error
+    # age_ci_upper = age_mean + z_critical * age_std_error
+    # age_ci_length = age_ci_upper - age_ci_lower
+    # age_bias = age_mean - true_mean_age
+    # age_relative_bias = age_bias / true_mean_age
+    # age_mse = np.mean((age_means - true_mean_age) ** 2)
+    # age_coverage = 1 if (true_mean_age >= age_ci_lower and true_mean_age <= age_ci_upper) else 0
+    #
+    # # Calculate metrics for 'age' regression parameter
+    # age_param_mean = np.mean(age_parameters)
+    # age_param_variance = np.var(age_parameters, ddof=1)
+    # age_param_std_error = np.sqrt(age_param_variance / len(age_parameters))
+    # age_param_ci_lower = age_param_mean - z_critical * age_param_std_error
+    # age_param_ci_upper = age_param_mean + z_critical * age_param_std_error
+    # age_param_ci_length = age_param_ci_upper - age_param_ci_lower
+    # age_param_bias = age_param_mean - true_age_coefficient
+    # age_param_relative_bias = age_param_bias / true_age_coefficient
+    # age_param_mse = np.mean((age_parameters - true_age_coefficient) ** 2)
+    # age_param_coverage = 1 if (
+    #             true_age_coefficient >= age_param_ci_lower and true_age_coefficient <= age_param_ci_upper) else 0
+    #
+    # # Output results
+    # print(f"Age Mean Estimate: {age_mean}")
+    # print(f"Age Mean Variance: {age_variance}")
+    # print(f"Age Mean Std Error: {age_std_error}")
+    # print(f"Age Mean 95% CI: ({age_ci_lower}, {age_ci_upper})")
+    # print(f"Age Mean Bias: {age_bias}")
+    # print(f"Age Mean Relative Bias: {age_relative_bias}")
+    # print(f"Age Mean MSE: {age_mse}")
+    # print(f"Age Mean CI Length: {age_ci_length}")
+    # print(f"Age Mean Coverage: {age_coverage}\n")
+    #
+    # print(f"Age Regression Coefficient Estimate: {age_param_mean}")
+    # print(f"Age Regression Coefficient Variance: {age_param_variance}")
+    # print(f"Age Regression Coefficient Std Error: {age_param_std_error}")
+    # print(f"Age Regression Coefficient 95% CI: ({age_param_ci_lower}, {age_param_ci_upper})")
+    # print(f"Age Regression Coefficient Bias: {age_param_bias}")
+    # print(f"Age Regression Coefficient Relative Bias: {age_param_relative_bias}")
+    # print(f"Age Regression Coefficient MSE: {age_param_mse}")
+    # print(f"Age Regression Coefficient CI Length: {age_param_ci_length}")
+    # print(f"Age Regression Coefficient Coverage: {age_param_coverage}")
+
 
 
 

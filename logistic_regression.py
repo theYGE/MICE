@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from sklearn.preprocessing import StandardScaler
 
-def bayesian_logreg_impute(original_data, target_column):
+
+def logreg_impute(original_data, target_column):
     """
     Perform Bayesian logistic regression-based imputation on a binary target column of the original DataFrame.
 

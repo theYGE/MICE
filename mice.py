@@ -14,7 +14,7 @@ from sklearn.datasets import fetch_openml
 from sklearn.datasets import fetch_openml
 from cart import cart_impute
 from stochastic_regression_imputation import sri
-from logistic_regression import bayesian_logreg_impute
+from logistic_regression import logreg_impute
 
 
 # TODO: Implement first imputation which is simply imputing using existing data
@@ -157,7 +157,7 @@ class MICE:
                             # TODO: Apply categorical imputation using multinomial logistic regression
                             # column_number = data_for_imputation.columns.get_loc(column)
                             # imputed_values = multinomial_logistic_impute(data_for_imputation, column_number)
-                            imputed_values = bayesian_logreg_impute(data_for_imputation, column)
+                            imputed_values = cart_impute(data_for_imputation, column)
                         else:
                             print(f"Skipping column '{column}' due to unknown type.")
                             continue

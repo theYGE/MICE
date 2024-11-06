@@ -46,7 +46,7 @@ def generate_mar_data(data, target_col, condition_cols, weights=None, intercept=
 
     # Set default weights if none are provided
     if weights is None:
-        weights = np.array([0.7, 0.05] )
+        weights = np.array([0.2, 0.7] )
 
     # Calculate the probabilities of missingness using the logistic function
     logits = intercept + np.dot(X, weights)
@@ -114,7 +114,7 @@ def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechan
         sample_data = resample(data, n_samples=sample_size, replace=True)
 
         if mechanism == "MAR": # Draw a bootstrap sample
-            missing_data = generate_mar_data(sample_data, target_col="sex", condition_cols=['height', 'weight'])
+            missing_data = generate_mar_data(sample_data, target_col="sex", condition_cols=['height', 'weight'], missing_rate=missing_rate)
         if mechanism == "MCAR":
             missing_data = simulate_mcar(sample_data, target_col="sex", missing_rate=missing_rate)
 
@@ -132,7 +132,7 @@ def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechan
         #     'sex': [1, 1, 0, 1],
         #     'race': [1, 1, 1, 0],
         # }, index=['height', 'age', 'sex', 'race'])
-
+        # missing_data.dropna(inplace=True)
         mice = MICE(missing_data)
         imputed_data = mice.impute()
 
@@ -191,7 +191,7 @@ def run_simulation(data, n_sim=500, sample_size = 1000, missing_rate=0.2, mechan
         sex_mean =df.loc['mean_of_sex', "Estimate"]
 
         sum_sex_coef_mse += (sex_coefficient - (-1.706))**2
-        sum_mean_sex_mse += (sex_mean - 52.51)**2
+        sum_mean_sex_mse += (sex_mean - 0.5251)**2
 
         # Add to the running sums
         sum_sex_coefficient += sex_coefficient
@@ -238,18 +238,161 @@ if __name__ == "__main__":
     dataset = dataset.filter(columns_to_keep)
     dataset.dropna(inplace=True)
 
+    # Define the true values for comparison
+    true_mean_female = 0.5251
+    true_female_parameter = -1.706
+
+    # Initialize lists to store the estimates and metrics
+    mean_females = []
+    female_parameters = []
+    mean_se_female = []
+    se_female_parameters = []
+
+    # Number of simulations
+    num_simulations = 500
+
+    for i in range(num_simulations):
+        print(f"Running simulation {i + 1}")
+        # Resample your dataset
+        sample_data = resample(dataset, n_samples=1000, replace=True)
+
+        # Generate missing data (assuming your function is defined)
+        missing_data = generate_mar_data(sample_data, target_col="sex", condition_cols=['height', 'weight'],
+                                         missing_rate=0.5)
+        # missing_data = simulate_mcar(sample_data, target_col="sex", missing_rate=0.5)
+        missing_data.dropna(inplace=True)
+
+        # Define features (X) and target (y)
+        features = ['height', 'age', 'sex', 'race']
+        X = pd.get_dummies(missing_data[features], drop_first=True)
+        y = missing_data['weight']  # Target variable
+
+        # Initialize and fit the Linear Regression model
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Store the regression coefficients and the mean of age
+        female_mean = np.mean(X['sex_Female'])
+        female_coef = model.coef_[2]  # Assuming age is the second feature after dummy encoding
+
+        # Append the estimates to the lists
+        mean_females.append(female_mean)
+        female_parameters.append(female_coef)
+
+        # Calculate standard errors for the current simulation
+        # Standard error of the mean
+        se_female = np.std(X['sex_Female'], ddof=1) / np.sqrt(len(X))
+        mean_se_female.append(se_female)
+
+        # Standard error of the regression coefficient (assuming homoscedasticity)
+        # Calculate residuals
+        residuals = y - model.predict(X)
+        residual_variance = np.var(residuals, ddof=1)
+        se_female_parameter = np.sqrt(residual_variance / np.sum((X['sex_Female'] - np.mean(X['sex_Female'])) ** 2))
+        se_female_parameters.append(se_female_parameter)
+
+    # Convert results to DataFrame for easier handling
+    results_df = pd.DataFrame({
+        'Mean_Female': mean_females,
+        'Female_Coefficient': female_parameters,
+        'SE_Mean_Female': mean_se_female,
+        'SE_Female_Coefficient': se_female_parameters
+    })
+
+    # Calculate coverage and confidence intervals
+    z_critical = 1.96  # For a 95% CI
+    results_df['CI_Lower_Mean_Female'] = results_df['Mean_Female'] - z_critical * results_df['SE_Mean_Female']
+    results_df['CI_Upper_Mean_Female'] = results_df['Mean_Female'] + z_critical * results_df['SE_Mean_Female']
+
+    results_df['CI_Lower_Female_Coefficient'] = results_df['Female_Coefficient'] - z_critical * results_df[
+        'SE_Female_Coefficient']
+    results_df['CI_Upper_Female_Coefficient'] = results_df['Female_Coefficient'] + z_critical * results_df[
+        'SE_Female_Coefficient']
+
+    # Calculate coverage
+    mean_female_coverage = np.mean(
+        (results_df['CI_Lower_Mean_Female'] <= true_mean_female) & (results_df['CI_Upper_Mean_Female'] >= true_mean_female))
+    female_coef_coverage = np.mean((results_df['CI_Lower_Female_Coefficient'] <= true_female_parameter) & (
+                results_df['CI_Upper_Female_Coefficient'] >= true_female_parameter))
+
+    avg_ci_length_mean = np.mean(results_df["CI_Upper_Mean_Female"] - results_df["CI_Lower_Mean_Female"])
+    avg_ci_length_coef = np.mean(results_df["CI_Upper_Female_Coefficient"] - results_df["CI_Lower_Female_Coefficient"])
+
+    print(f"Mean Age Coverage: {mean_age_coverage * 100:.2f}%")
+    print(f"Age Coefficient Coverage: {age_coef_coverage * 100:.2f}%")
+
+
+
+
+    # # True values for the analysis
+    # true_mean_female = 0.5251
+    # true_female_coefficient = -1.706
+    #
+    # # Initialize variables to store results
+    # female_means = []
+    # female_parameters = []
+    #
+    # for i in range(500):
+    #     print("Running simulation", i)
+    #     sample_data = resample(dataset, n_samples=1000, replace=True)
+    #     missing_data = generate_mar_data(sample_data, target_col="sex", condition_cols=['height', 'weight'],
+    #                                      missing_rate=0.5)
+    #     # missing_data = simulate_mcar(sample_data, target_col="sex", missing_rate=0.5)
+    #     missing_data.dropna(inplace=True)
+    #
+    #     # Define features (X) and target (y)
+    #     features = ['height', 'age', 'sex', 'race']
+    #     X = pd.get_dummies(missing_data[features], drop_first=True)
+    #     y = missing_data['weight']  # Target variable
+    #
+    #     # Initialize and fit the Linear Regression model
+    #     model = LinearRegression()
+    #     model.fit(X, y)
+    #
+    #     # Collect the mean of 'age' and the regression coefficient for 'age'
+    #     female_means.append(np.mean(X['sex_Female']))
+    #     female_parameters.append(model.coef_[2])
+    #
+    # # Convert collected results to arrays for easier computation
+    # female_means = np.array(female_means)
+    # female_parameters = np.array(female_parameters)
+    #
+    # # Calculate metrics for 'age' mean
+    # female_mean = np.mean(female_means)
+    # female_variance = np.var(female_means, ddof=1)
+    # female_bias = female_mean - true_mean_female
+    # female_relative_bias = female_bias / true_mean_female
+    # female_mse = np.mean((female_means - true_mean_female) ** 2)
+    #
+    # # Calculate metrics for 'age' regression parameter
+    # female_param_mean = np.mean(female_parameters)
+    # female_param_variance = np.var(female_parameters, ddof=1)
+    # female_param_bias = female_param_mean - true_female_coefficient
+    # female_param_relative_bias = female_param_bias / true_female_coefficient
+    # female_param_mse = np.mean((female_parameters - true_female_coefficient) ** 2)
+    #
+    # # Output results
+    # print("done")
+
+
     # True Proportion Female = 52.51
     # True female coef = -1.706
 
-    age_mean = 0
-    for i in range(500):
-        print("Running simulation", i)
-        sample_data = resample(dataset, n_samples=1000, replace=True)
-        missing_data = generate_mar_data(sample_data, target_col="age", condition_cols=['height', 'weight'], missing_rate=0.2)
-        missing_data.dropna(inplace=True)
-        age_mean += np.mean(missing_data['age'])
-    age_mean /= 500
-    print(age_mean)
+    # female_proportion = 0
+    # female_parameter = model.coef_[2]
+    # for i in range(500):
+    #     print("Running simulation", i)
+    #     sample_data = resample(dataset, n_samples=1000, replace=True)
+    #     # missing_data = generate_mar_data(sample_data, target_col="sex", condition_cols=['height', 'weight'], missing_rate=0.5)
+    #     missing_data = simulate_mcar(sample_data, target_col="sex", missing_rate=0.5)
+    #     missing_data.dropna(inplace=True)
+    #
+    #     features = ['height', 'age', 'sex', 'race']
+    #     X = pd.get_dummies(missing_data[features], drop_first=True)
+    #     female_proportion += X['sex_Female'].mean()
+    #
+    # female_proportion /= 500
+    # print(age_mean)
 
 
         # missing_data = simulate_mcar(sample_data, target_col="age", missing_rate=0.2)
@@ -274,22 +417,23 @@ if __name__ == "__main__":
     # model.fit(X, y)
     # # True female coef = -1.706
     # female_parameter = model.coef_[2]
-    #
+
     # proportion_female = 0
     # female_parameter = 0
-    # #
+    # # #
     # for i in range(1000):
     #     print("Running simulation", i)
     #     sample_data = resample(dataset, n_samples=1000, replace=True)
-    #     # missing_data = simulate_mcar(sample_data, target_col="age", missing_rate=0.2)
+    #     # missing_data = simulate_mcar(sample_data, target_col="sex", missing_rate=0.5)
     #     # for _ in range(20):
     #     #     sample_data['age'] = sri(missing_data, 'age')
+    #     missing_data = generate_mar_data(sample_data, target_col="sex", condition_cols=['height', 'weight'], missing_rate=0.2)
     #
     #     # Define features (X) and target (y)
     #     features = ['height', 'age', 'sex', 'race']
     #
-    #     X = pd.get_dummies(sample_data[features], drop_first=True)
-    #     y = sample_data['weight']  # Target variable
+    #     X = pd.get_dummies(missing_data[features], drop_first=True)
+    #     y = missing_data['weight']  # Target variable
     #
     #     p_female = X['sex_Female'].mean()
     #     proportion_female += p_female
@@ -304,7 +448,7 @@ if __name__ == "__main__":
 
 
 
-    result = run_simulation(data=dataset, n_sim=500, missing_rate=0.2, mechanism="MCAR")
+    result = run_simulation(data=dataset, n_sim=500, missing_rate=0.5, mechanism="MAR")
 
 
 
